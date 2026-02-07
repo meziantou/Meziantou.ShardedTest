@@ -1,0 +1,53 @@
+name: Build and Publish
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+  DOTNET_NOLOGO: true
+  Configuration: Release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # Required for OIDC token issuance for trusted publishing
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+
+      - name: Test
+        run: dotnet test --configuration ${{ env.Configuration }}
+
+      - name: Pack
+        run: |
+          dotnet pack src/Meziantou.ShardedTest --configuration ${{ env.Configuration }} --output ./artifacts
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: nuget-packages
+          path: ./artifacts/*.nupkg
+
+      - name: NuGet login (OIDC → temp API key)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: nuget/login@v1
+        id: nuget-login
+        with:
+          user: meziantou
+
+      - name: Push to NuGet.org
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: dotnet nuget push ./artifacts/*.nupkg --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate

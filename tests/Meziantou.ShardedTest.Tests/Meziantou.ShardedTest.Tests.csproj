@@ -1,0 +1,13 @@
+<Project Sdk="Meziantou.NET.Sdk.Test">
+
+  <ItemGroup>
+    <PackageReference Include="Meziantou.Framework.TemporaryDirectory" Version="1.0.33" />
+    <PackageReference Include="xunit.v3" Version="3.0.1" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Meziantou.ShardedTest\Meziantou.ShardedTest.csproj" />
+  </ItemGroup>
+
+</Project>
