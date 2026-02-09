@@ -65,6 +65,108 @@ public class FunctionalTests(ToolFixture toolFixture)
     }
 
     [Fact]
+    public async Task ListTestsAndRunsHonorUserFilter()
+    {
+        await using var temp = TemporaryDirectory.Create();
+        var toolPath = toolFixture.ToolPath;
+        var testProjectPath = CreateTestProject(temp, GetSampleTestNames());
+        var resultsRoot = Path.GetDirectoryName(testProjectPath)!;
+        CleanupTrxResults(resultsRoot);
+
+        const string Filter = "FullyQualifiedName~ShardB";
+
+        var filteredTests = await ListTestsAsync(testProjectPath, Filter);
+        var expectedTests = TestSelector.SelectTests(filteredTests, jobNumber: 1, totalJobs: 2);
+
+        var listResult = await RunToolAsync(
+            toolPath,
+            [
+                "--job-number", "1",
+                "--total-jobs", "2",
+                testProjectPath,
+                "--list-tests",
+                "--filter", Filter,
+            ],
+            Path.GetDirectoryName(testProjectPath)!,
+            environmentVariables: null);
+
+        Assert.True(listResult.ExitCode == 0, BuildProcessMessage(listResult));
+
+        var listedTests = TestListParser.Parse(CombineOutput(listResult));
+        Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), listedTests.OrderBy(test => test, StringComparer.Ordinal));
+
+        var runResult = await RunToolAsync(
+            toolPath,
+            [
+                "--job-number", "1",
+                "--total-jobs", "2",
+                testProjectPath,
+                "--logger", "trx",
+                "--filter", Filter,
+            ],
+            Path.GetDirectoryName(testProjectPath)!,
+            environmentVariables: null);
+
+        Assert.True(runResult.ExitCode == 0, BuildProcessMessage(runResult));
+
+        var executedTests = ReadExecutedTests(resultsRoot);
+        Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), executedTests.OrderBy(test => test, StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task ListTestsAndRunsSupportConfigurationAndNoBuild()
+    {
+        await using var temp = TemporaryDirectory.Create();
+        var toolPath = toolFixture.ToolPath;
+        var testProjectPath = CreateTestProject(temp, GetSampleTestNames());
+        var resultsRoot = Path.GetDirectoryName(testProjectPath)!;
+        CleanupTrxResults(resultsRoot);
+
+        const string Configuration = "Release";
+
+        await BuildProjectAsync(testProjectPath, Configuration);
+        IntroduceBuildError(testProjectPath);
+
+        var expectedTests = GetSampleTestNames();
+
+        var listResult = await RunToolAsync(
+            toolPath,
+            [
+                "--job-number", "1",
+                "--total-jobs", "1",
+                testProjectPath,
+                "--list-tests",
+                "--configuration", Configuration,
+                "--no-build",
+            ],
+            Path.GetDirectoryName(testProjectPath)!,
+            environmentVariables: null);
+
+        Assert.True(listResult.ExitCode == 0, BuildProcessMessage(listResult));
+
+        var listedTests = TestListParser.Parse(CombineOutput(listResult));
+        Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), listedTests.OrderBy(test => test, StringComparer.Ordinal));
+
+        var runResult = await RunToolAsync(
+            toolPath,
+            [
+                "--job-number", "1",
+                "--total-jobs", "1",
+                testProjectPath,
+                "--logger", "trx",
+                "--configuration", Configuration,
+                "--no-build",
+            ],
+            Path.GetDirectoryName(testProjectPath)!,
+            environmentVariables: null);
+
+        Assert.True(runResult.ExitCode == 0, BuildProcessMessage(runResult));
+
+        var executedTests = ReadExecutedTests(resultsRoot);
+        Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), executedTests.OrderBy(test => test, StringComparer.Ordinal));
+    }
+
+    [Fact]
     public async Task SplitsFiltersWhenMaxLengthIsSmall()
     {
         await using var temp = TemporaryDirectory.Create();
@@ -273,6 +375,36 @@ public class FunctionalTests(ToolFixture toolFixture)
 
         var output = CombineOutput(result);
         return TestListParser.Parse(output);
+    }
+
+    private static async Task<IReadOnlyList<string>> ListTestsAsync(string projectPath, string filter)
+    {
+        var result = await RunDotnetAsync(
+            ["test", projectPath, "--list-tests", "--filter", filter],
+            Path.GetDirectoryName(projectPath)!,
+            environmentVariables: null);
+
+        Assert.True(result.ExitCode == 0, BuildProcessMessage(result));
+
+        var output = CombineOutput(result);
+        return TestListParser.Parse(output);
+    }
+
+    private static async Task BuildProjectAsync(string projectPath, string configuration)
+    {
+        var result = await RunDotnetAsync(
+            ["build", projectPath, "--configuration", configuration],
+            Path.GetDirectoryName(projectPath)!,
+            environmentVariables: null);
+
+        Assert.True(result.ExitCode == 0, BuildProcessMessage(result));
+    }
+
+    private static void IntroduceBuildError(string projectPath)
+    {
+        var projectDirectory = Path.GetDirectoryName(projectPath)!;
+        var testFilePath = Path.Combine(projectDirectory, "SampleTests.cs");
+        File.AppendAllText(testFilePath, Environment.NewLine + "#error Build should not run" + Environment.NewLine);
     }
 
     private static string[] ReadExecutedTests(string resultsRoot)

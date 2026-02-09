@@ -24,6 +24,34 @@ Example:
 sharded-test --job-number 1 --total-jobs 4 tests/MyTests.csproj --configuration Release
 ```
 
+## GitHub Actions example (3 jobs)
+
+Use a matrix to split the test project into 3 shards. Each job runs a distinct shard while using the same total job count.
+
+```yaml
+name: CI
+
+on:
+	push:
+	pull_request:
+
+jobs:
+	test:
+		runs-on: ubuntu-latest
+		strategy:
+			fail-fast: false
+			matrix:
+				job-number: [1, 2, 3]
+
+		steps:
+			- uses: actions/checkout@v4
+			- name: Install sharded-test
+				run: dotnet tool install --global Meziantou.ShardedTest
+
+			- name: Run tests (shard ${{ matrix.job-number }}/3)
+				run: sharded-test --job-number ${{ matrix.job-number }} --total-jobs 3 tests/MyTests.csproj
+```
+
 ## How it works
 
 The tool runs a subset of tests from a test project based on the provided parameters. It performs the following steps:
