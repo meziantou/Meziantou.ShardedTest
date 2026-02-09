@@ -61,3 +61,5 @@ The tool runs a subset of tests from a test project based on the provided parame
 - Selects a shard based on `--job-number` and `--total-jobs`
 - Runs the selected tests using `dotnet test` with the appropriate filters
 - Forwards all parameters except `--job-number` and `--total-jobs` to `dotnet test`
+
+Note that command line length can be a limiting factor when running a large number of tests. The tool automatically splits test filters into multiple `dotnet test` invocations if necessary.
