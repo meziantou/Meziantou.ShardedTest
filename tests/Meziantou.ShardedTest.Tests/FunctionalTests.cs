@@ -16,13 +16,13 @@ public class FunctionalTests(ToolFixture toolFixture)
         CleanupTrxResults(resultsRoot);
 
         var allTests = await ListTestsAsync(testProjectPath);
-        var expectedTests = TestSelector.SelectTests(allTests, jobNumber: 1, totalJobs: 2);
+        var expectedTests = TestSelector.SelectTests(allTests, shardIndex: 1, totalShards: 2);
 
         var runResult = await RunToolAsync(
             toolPath,
             [
-                "--job-number", "1",
-                "--total-jobs", "2",
+                "--shard-index", "1",
+                "--total-shards", "2",
                 testProjectPath,
                 "--logger", "trx",
             ],
@@ -45,13 +45,13 @@ public class FunctionalTests(ToolFixture toolFixture)
         CleanupTrxResults(resultsRoot);
 
         var allTests = await ListTestsAsync(testProjectPath);
-        var expectedTests = TestSelector.SelectTests(allTests, jobNumber: 1, totalJobs: 2);
+        var expectedTests = TestSelector.SelectTests(allTests, shardIndex: 1, totalShards: 2);
 
         var runResult = await RunToolAsync(
             toolPath,
             [
-                "--job-number", "1",
-                "--total-jobs", "2",
+                "--shard-index", "1",
+                "--total-shards", "2",
                 testProjectPath,
                 "--list-tests",
             ],
@@ -76,13 +76,13 @@ public class FunctionalTests(ToolFixture toolFixture)
         const string Filter = "FullyQualifiedName~ShardB";
 
         var filteredTests = await ListTestsAsync(testProjectPath, Filter);
-        var expectedTests = TestSelector.SelectTests(filteredTests, jobNumber: 1, totalJobs: 2);
+        var expectedTests = TestSelector.SelectTests(filteredTests, shardIndex: 1, totalShards: 2);
 
         var listResult = await RunToolAsync(
             toolPath,
             [
-                "--job-number", "1",
-                "--total-jobs", "2",
+                "--shard-index", "1",
+                "--total-shards", "2",
                 testProjectPath,
                 "--list-tests",
                 "--filter", Filter,
@@ -98,8 +98,8 @@ public class FunctionalTests(ToolFixture toolFixture)
         var runResult = await RunToolAsync(
             toolPath,
             [
-                "--job-number", "1",
-                "--total-jobs", "2",
+                "--shard-index", "1",
+                "--total-shards", "2",
                 testProjectPath,
                 "--logger", "trx",
                 "--filter", Filter,
@@ -132,8 +132,8 @@ public class FunctionalTests(ToolFixture toolFixture)
         var listResult = await RunToolAsync(
             toolPath,
             [
-                "--job-number", "1",
-                "--total-jobs", "1",
+                "--shard-index", "1",
+                "--total-shards", "1",
                 testProjectPath,
                 "--list-tests",
                 "--configuration", Configuration,
@@ -150,8 +150,8 @@ public class FunctionalTests(ToolFixture toolFixture)
         var runResult = await RunToolAsync(
             toolPath,
             [
-                "--job-number", "1",
-                "--total-jobs", "1",
+                "--shard-index", "1",
+                "--total-shards", "1",
                 testProjectPath,
                 "--logger", "trx",
                 "--configuration", Configuration,
@@ -180,8 +180,8 @@ public class FunctionalTests(ToolFixture toolFixture)
         var runResult = await RunToolAsync(
             toolPath,
             [
-                "--job-number", "1",
-                "--total-jobs", "1",
+                "--shard-index", "1",
+                "--total-shards", "1",
                 testProjectPath,
                 "--logger", "trx"
             ],
@@ -212,8 +212,8 @@ public class FunctionalTests(ToolFixture toolFixture)
         var runResult = await RunToolAsync(
             toolPath,
             [
-                "--job-number", "10",
-                "--total-jobs", "10",
+                "--shard-index", "10",
+                "--total-shards", "10",
                 testProjectPath
             ],
             Path.GetDirectoryName(testProjectPath)!,
@@ -226,6 +226,37 @@ public class FunctionalTests(ToolFixture toolFixture)
 
         var trxFiles = Directory.GetFiles(resultsRoot, "*.trx", SearchOption.AllDirectories);
         Assert.Empty(trxFiles);
+    }
+
+    [Fact]
+    public async Task UsesGitLabEnvironmentVariablesAsFallback()
+    {
+        await using var temp = TemporaryDirectory.Create();
+        var toolPath = toolFixture.ToolPath;
+        var testProjectPath = CreateTestProject(temp, GetSampleTestNames());
+        var resultsRoot = Path.GetDirectoryName(testProjectPath)!;
+        CleanupTrxResults(resultsRoot);
+
+        var allTests = await ListTestsAsync(testProjectPath);
+        var expectedTests = TestSelector.SelectTests(allTests, shardIndex: 1, totalShards: 2);
+
+        var runResult = await RunToolAsync(
+            toolPath,
+            [
+                testProjectPath,
+                "--logger", "trx",
+            ],
+            Path.GetDirectoryName(testProjectPath)!,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["CI_NODE_INDEX"] = "1",
+                ["CI_NODE_TOTAL"] = "2",
+            });
+
+        Assert.True(runResult.ExitCode == 0, BuildProcessMessage(runResult));
+
+        var executedTests = ReadExecutedTests(resultsRoot);
+        Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), executedTests.OrderBy(test => test, StringComparer.Ordinal));
     }
 
     [Theory]
@@ -247,32 +278,32 @@ public class FunctionalTests(ToolFixture toolFixture)
     {
         yield return
         [
-            new[] { "--job-number", "0", "--total-jobs", "1" },
-            "--job-number must be greater than zero."
+            new[] { "--shard-index", "0", "--total-shards", "1" },
+            "--shard-index must be greater than zero."
         ];
 
         yield return
         [
-            new[] { "--job-number", "2", "--total-jobs", "1" },
-            "--job-number must be less than or equal to --total-jobs."
+            new[] { "--shard-index", "2", "--total-shards", "1" },
+            "--shard-index must be less than or equal to --total-shards."
         ];
 
         yield return
         [
-            new[] { "--job-number", "1", "--total-jobs", "0" },
-            "--total-jobs must be greater than zero."
+            new[] { "--shard-index", "1", "--total-shards", "0" },
+            "--total-shards must be greater than zero."
         ];
 
         yield return
         [
-            new[] { "--job-number", "a", "--total-jobs", "1" },
-            "The --job-number option must be an integer."
+            new[] { "--shard-index", "a", "--total-shards", "1" },
+            "The --shard-index option must be an integer."
         ];
 
         yield return
         [
-            new[] { "--job-number", "1", "--total-jobs", "b" },
-            "The --total-jobs option must be an integer."
+            new[] { "--shard-index", "1", "--total-shards", "b" },
+            "The --total-shards option must be an integer."
         ];
     }
 
