@@ -65,6 +65,7 @@ internal static class ArgumentParser
             forwardArgs.Add(arg);
         }
 
+        // CI_NODE_INDEX and CI_NODE_TOTAL are set by GitLab CI when using the parallel: keyword
         if (!shardIndex.HasValue)
         {
             var envValue = Environment.GetEnvironmentVariable("CI_NODE_INDEX");
