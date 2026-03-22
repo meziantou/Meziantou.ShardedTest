@@ -5,6 +5,7 @@
     <PackAsTool>true</PackAsTool>
     <ToolName>sharded-test</ToolName>
     <ToolCommandName>sharded-test</ToolCommandName>
+    <Version>1.0.1</Version>
   </PropertyGroup>
 
   <ItemGroup>
