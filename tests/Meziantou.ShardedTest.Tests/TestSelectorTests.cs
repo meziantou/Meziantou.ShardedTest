@@ -7,7 +7,7 @@ public class TestSelectorTests
     {
         var tests = new[] { "B.Test", "A.Test", "D.Test", "C.Test" };
 
-        var selected = TestSelector.SelectTests(tests, jobNumber: 1, totalJobs: 2);
+        var selected = TestSelector.SelectTests(tests, shardIndex: 1, totalShards: 2);
 
         Assert.Equal(["A.Test", "C.Test"], selected);
     }
@@ -17,7 +17,7 @@ public class TestSelectorTests
     {
         var tests = new[] { "B.Test", "A.Test", "D.Test", "C.Test" };
 
-        var selected = TestSelector.SelectTests(tests, jobNumber: 2, totalJobs: 2);
+        var selected = TestSelector.SelectTests(tests, shardIndex: 2, totalShards: 2);
 
         Assert.Equal(["B.Test", "D.Test"], selected);
     }
@@ -25,7 +25,7 @@ public class TestSelectorTests
     [Fact]
     public void SelectTests_ReturnsEmpty_WhenNoTestsProvided()
     {
-        var selected = TestSelector.SelectTests(Array.Empty<string>(), jobNumber: 1, totalJobs: 3);
+        var selected = TestSelector.SelectTests(Array.Empty<string>(), shardIndex: 1, totalShards: 3);
 
         Assert.Empty(selected);
     }

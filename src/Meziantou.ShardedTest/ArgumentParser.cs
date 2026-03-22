@@ -9,87 +9,118 @@ internal static class ArgumentParser
         parsed = null!;
         error = string.Empty;
 
-        int? jobNumber = null;
-        int? totalJobs = null;
+        int? shardIndex = null;
+        int? totalShards = null;
         var forwardArgs = new List<string>(args.Length);
 
         for (var i = 0; i < args.Length; i++)
         {
             var arg = args[i];
-            if (TryReadOption(args, ref i, "--job-number", out var jobNumberValue, out error))
+            if (TryReadOption(args, ref i, "--shard-index", out var shardIndexValue, out error))
             {
                 if (error.Length > 0)
                 {
                     return false;
                 }
 
-                if (jobNumber.HasValue)
+                if (shardIndex.HasValue)
                 {
-                    error = "The --job-number option is specified more than once.";
+                    error = "The --shard-index option is specified more than once.";
                     return false;
                 }
 
-                if (!int.TryParse(jobNumberValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedJobNumber))
+                if (!int.TryParse(shardIndexValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedShardIndex))
                 {
-                    error = "The --job-number option must be an integer.";
+                    error = "The --shard-index option must be an integer.";
                     return false;
                 }
 
-                jobNumber = parsedJobNumber;
+                shardIndex = parsedShardIndex;
                 continue;
             }
 
-            if (TryReadOption(args, ref i, "--total-jobs", out var totalJobsValue, out error))
+            if (TryReadOption(args, ref i, "--total-shards", out var totalShardsValue, out error))
             {
                 if (error.Length > 0)
                 {
                     return false;
                 }
 
-                if (totalJobs.HasValue)
+                if (totalShards.HasValue)
                 {
-                    error = "The --total-jobs option is specified more than once.";
+                    error = "The --total-shards option is specified more than once.";
                     return false;
                 }
 
-                if (!int.TryParse(totalJobsValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedTotalJobs))
+                if (!int.TryParse(totalShardsValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedTotalShards))
                 {
-                    error = "The --total-jobs option must be an integer.";
+                    error = "The --total-shards option must be an integer.";
                     return false;
                 }
 
-                totalJobs = parsedTotalJobs;
+                totalShards = parsedTotalShards;
                 continue;
             }
 
             forwardArgs.Add(arg);
         }
 
-        if (!jobNumber.HasValue || !totalJobs.HasValue)
+        // CI_NODE_INDEX and CI_NODE_TOTAL are set by GitLab CI when using the parallel: keyword
+        if (!shardIndex.HasValue)
         {
-            error = "Both --job-number and --total-jobs must be specified.";
+            var envValue = Environment.GetEnvironmentVariable("CI_NODE_INDEX");
+            if (envValue is not null)
+            {
+                if (!int.TryParse(envValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedEnvShardIndex))
+                {
+                    error = "The CI_NODE_INDEX environment variable must be an integer.";
+                    return false;
+                }
+
+                shardIndex = parsedEnvShardIndex;
+            }
+        }
+
+        if (!totalShards.HasValue)
+        {
+            var envValue = Environment.GetEnvironmentVariable("CI_NODE_TOTAL");
+            if (envValue is not null)
+            {
+                if (!int.TryParse(envValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedEnvTotalShards))
+                {
+                    error = "The CI_NODE_TOTAL environment variable must be an integer.";
+                    return false;
+                }
+
+                totalShards = parsedEnvTotalShards;
+            }
+        }
+
+        if (!shardIndex.HasValue || !totalShards.HasValue)
+        {
+            error = "Both --shard-index and --total-shards must be specified.";
             return false;
         }
 
-        if (totalJobs.Value <= 0)
+        if (totalShards.Value <= 0)
         {
-            error = "--total-jobs must be greater than zero.";
+            error = "--total-shards must be greater than zero.";
             return false;
         }
 
-        if (jobNumber.Value <= 0)
+        if (shardIndex.Value <= 0)
         {
-            error = "--job-number must be greater than zero.";
+            error = "--shard-index must be greater than zero.";
             return false;
         }
 
-        if (jobNumber.Value > totalJobs.Value)
+        if (shardIndex.Value > totalShards.Value)
         {
-            error = "--job-number must be less than or equal to --total-jobs.";
+            error = "--shard-index must be less than or equal to --total-shards.";
             return false;
         }
 
-        parsed = new ParsedArguments(jobNumber.Value, totalJobs.Value, forwardArgs.ToArray());
+        parsed = new ParsedArguments(shardIndex.Value, totalShards.Value, forwardArgs.ToArray());
         return true;
     }
 

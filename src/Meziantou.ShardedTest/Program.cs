@@ -2,7 +2,7 @@
 
 internal static class Program
 {
-	private const string UsageText = "Usage: Meziantou.ShardedTest --job-number <n> --total-jobs <n> [dotnet test arguments]";
+	private const string UsageText = "Usage: Meziantou.ShardedTest --shard-index <n> --total-shards <n> [dotnet test arguments]";
 
 	public static async Task<int> Main(string[] args)
 	{
@@ -26,7 +26,7 @@ internal static class Program
 			return 1;
 		}
 
-		var selectedTests = TestSelector.SelectTests(tests, parsed.JobNumber, parsed.TotalJobs);
+		var selectedTests = TestSelector.SelectTests(tests, parsed.ShardIndex, parsed.TotalShards);
 		if (listTestsRequested)
 		{
 			WriteListTests(selectedTests);
