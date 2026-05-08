@@ -30,7 +30,10 @@ public class FunctionalTests(ToolFixture toolFixture)
             environmentVariables: null);
 
         Assert.True(runResult.ExitCode == 0, BuildProcessMessage(runResult));
-        Assert.Contains("TestResults", CombineOutput(runResult), StringComparison.Ordinal);
+        var output = CombineOutput(runResult);
+        Assert.Contains("Listing all tests...", output, StringComparison.Ordinal);
+        Assert.Contains($"Found {allTests.Count} tests, running {expectedTests.Count} over {allTests.Count} (shard 1/2)", output, StringComparison.Ordinal);
+        Assert.Contains("TestResults", output, StringComparison.Ordinal);
 
         var executedTests = ReadExecutedTests(resultsRoot);
         Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), executedTests.OrderBy(test => test, StringComparer.Ordinal));
@@ -60,6 +63,7 @@ public class FunctionalTests(ToolFixture toolFixture)
             environmentVariables: null);
 
         Assert.True(runResult.ExitCode == 0, BuildProcessMessage(runResult));
+        Assert.Contains("Listing all tests...", CombineOutput(runResult), StringComparison.Ordinal);
 
         var listedTests = TestListParser.Parse(CombineOutput(runResult));
         Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), listedTests.OrderBy(test => test, StringComparer.Ordinal));
@@ -193,6 +197,7 @@ public class FunctionalTests(ToolFixture toolFixture)
             });
 
         Assert.True(runResult.ExitCode == 0, BuildProcessMessage(runResult));
+        Assert.Contains("Running tests (batch 1/", CombineOutput(runResult), StringComparison.Ordinal);
 
         var trxFiles = Directory.GetFiles(resultsRoot, "*.trx", SearchOption.AllDirectories);
         Assert.True(trxFiles.Length > 1, "Expected multiple trx files due to filter splitting.");

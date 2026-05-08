@@ -15,6 +15,7 @@ internal static class Program
 
 		IReadOnlyList<string> tests;
 		var listTestsRequested = ArgumentUtilities.HasListTestsArg(parsed.ForwardArgs);
+		Console.WriteLine("Listing all tests...");
 
 		try
 		{
@@ -27,6 +28,7 @@ internal static class Program
 		}
 
 		var selectedTests = TestSelector.SelectTests(tests, parsed.ShardIndex, parsed.TotalShards);
+		Console.WriteLine($"Found {tests.Count} tests, running {selectedTests.Count} over {tests.Count} (shard {parsed.ShardIndex}/{parsed.TotalShards})");
 		if (listTestsRequested)
 		{
 			WriteListTests(selectedTests);
