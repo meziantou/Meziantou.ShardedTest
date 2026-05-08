@@ -24,6 +24,8 @@ Example:
 sharded-test --shard-index 1 --total-shards 4 tests/MyTests.csproj --configuration Release
 ```
 
+Use `--verbose` to print each executed `dotnet` command line.
+
 ## GitHub Actions example (3 jobs)
 
 Use a matrix to split the test project into 3 shards. Each job runs a distinct shard while using the same total shard count.
