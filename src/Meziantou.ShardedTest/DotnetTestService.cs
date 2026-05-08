@@ -34,9 +34,14 @@ internal static class DotnetTestService
             return 0;
         }
 
-        foreach (var filter in filters)
+        for (var filterIndex = 0; filterIndex < filters.Count; filterIndex++)
         {
-            var arguments = BuildRunArguments(sanitizedArgs, filter);
+            if (filters.Count > 1)
+            {
+                Console.WriteLine($"Running tests (batch {filterIndex + 1}/{filters.Count})");
+            }
+
+            var arguments = BuildRunArguments(sanitizedArgs, filters[filterIndex]);
             var result = await ProcessRunner.RunAsync("dotnet", arguments, cancellationToken, forwardOutput: true);
             if (result.ExitCode != 0)
             {
