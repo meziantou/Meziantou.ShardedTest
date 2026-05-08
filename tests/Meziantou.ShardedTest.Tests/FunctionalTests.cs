@@ -30,6 +30,7 @@ public class FunctionalTests(ToolFixture toolFixture)
             environmentVariables: null);
 
         Assert.True(runResult.ExitCode == 0, BuildProcessMessage(runResult));
+        Assert.Contains("TestResults", CombineOutput(runResult), StringComparison.Ordinal);
 
         var executedTests = ReadExecutedTests(resultsRoot);
         Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), executedTests.OrderBy(test => test, StringComparer.Ordinal));

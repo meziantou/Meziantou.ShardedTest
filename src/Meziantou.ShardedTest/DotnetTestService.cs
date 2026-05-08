@@ -37,7 +37,7 @@ internal static class DotnetTestService
         foreach (var filter in filters)
         {
             var arguments = BuildRunArguments(sanitizedArgs, filter);
-            var result = await ProcessRunner.RunAsync("dotnet", arguments, cancellationToken);
+            var result = await ProcessRunner.RunAsync("dotnet", arguments, cancellationToken, forwardOutput: true);
             if (result.ExitCode != 0)
             {
                 return result.ExitCode;
