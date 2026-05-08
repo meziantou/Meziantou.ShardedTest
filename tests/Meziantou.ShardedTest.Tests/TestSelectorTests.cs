@@ -29,4 +29,25 @@ public class TestSelectorTests
 
         Assert.Empty(selected);
     }
+
+    [Fact]
+    public void SelectTests_ForFrameworkAwareTests_UsesFrameworkThenNameOrdering()
+    {
+        var tests = new[]
+        {
+            new DiscoveredTest("net10.0", "A.Test"),
+            new DiscoveredTest("net8.0", "B.Test"),
+            new DiscoveredTest("net8.0", "A.Test"),
+            new DiscoveredTest("net10.0", "B.Test"),
+        };
+
+        var selected = TestSelector.SelectTests(tests, shardIndex: 1, totalShards: 2);
+
+        Assert.Equal(
+            [
+                new DiscoveredTest("net10.0", "A.Test"),
+                new DiscoveredTest("net8.0", "A.Test"),
+            ],
+            selected);
+    }
 }

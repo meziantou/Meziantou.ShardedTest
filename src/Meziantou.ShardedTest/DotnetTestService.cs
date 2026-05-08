@@ -5,7 +5,7 @@ namespace Meziantou.ShardedTest;
 internal static class DotnetTestService
 {
 
-    public static async Task<IReadOnlyList<string>> ListTestsAsync(string[] forwardArgs, CancellationToken cancellationToken, bool verbose = false)
+    public static async Task<IReadOnlyList<DiscoveredTest>> ListTestsAsync(string[] forwardArgs, CancellationToken cancellationToken, bool verbose = false)
     {
         var arguments = BuildListTestsArguments(forwardArgs);
         var result = await ProcessRunner.RunAsync("dotnet", arguments, cancellationToken, verbose: verbose);
@@ -21,32 +21,45 @@ internal static class DotnetTestService
 
     public static async Task<int> RunTestsAsync(
         string[] forwardArgs,
-        IReadOnlyList<string> allTests,
-        IReadOnlyList<string> selectedTests,
+        IReadOnlyList<DiscoveredTest> allTests,
+        IReadOnlyList<DiscoveredTest> selectedTests,
         CancellationToken cancellationToken,
         bool verbose = false)
     {
         var sanitizedArgs = ArgumentUtilities.RemoveFilterArgs(forwardArgs);
-        var maxFilterLength = GetMaxFilterLength(sanitizedArgs);
-        var filters = TestFilterBuilder.BuildFilters(allTests, selectedTests, maxFilterLength);
+        var frameworkArgs = ArgumentUtilities.RemoveFrameworkArgs(sanitizedArgs);
+        var maxFilterLength = GetMaxFilterLength(frameworkArgs);
+        var frameworkGroups = selectedTests
+            .GroupBy(test => test.TargetFramework, StringComparer.Ordinal)
+            .OrderBy(group => group.Key ?? string.Empty, StringComparer.Ordinal);
 
-        if (filters.Count == 0)
+        foreach (var frameworkGroup in frameworkGroups)
         {
-            return 0;
-        }
+            var allFrameworkTests = allTests
+                .Where(test => string.Equals(test.TargetFramework, frameworkGroup.Key, StringComparison.Ordinal))
+                .Select(test => test.Name)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            var selectedFrameworkTests = frameworkGroup
+                .Select(test => test.Name)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            var filters = TestFilterBuilder.BuildFilters(allFrameworkTests, selectedFrameworkTests, maxFilterLength);
+            var args = AddFrameworkArg(frameworkArgs, frameworkGroup.Key);
 
-        for (var filterIndex = 0; filterIndex < filters.Count; filterIndex++)
-        {
-            if (filters.Count > 1)
+            for (var filterIndex = 0; filterIndex < filters.Count; filterIndex++)
             {
-                Console.WriteLine($"Running tests (batch {filterIndex + 1}/{filters.Count})");
-            }
+                if (filters.Count > 1)
+                {
+                    Console.WriteLine($"Running tests (batch {filterIndex + 1}/{filters.Count})");
+                }
 
-            var arguments = BuildRunArguments(sanitizedArgs, filters[filterIndex]);
-            var result = await ProcessRunner.RunAsync("dotnet", arguments, cancellationToken, forwardOutput: true, verbose: verbose);
-            if (result.ExitCode != 0)
-            {
-                return result.ExitCode;
+                var arguments = BuildRunArguments(args, filters[filterIndex]);
+                var result = await ProcessRunner.RunAsync("dotnet", arguments, cancellationToken, forwardOutput: true, verbose: verbose);
+                if (result.ExitCode != 0)
+                {
+                    return result.ExitCode;
+                }
             }
         }
 
@@ -68,6 +81,16 @@ internal static class DotnetTestService
         args.Add("--filter");
         args.Add(filter);
         return args;
+    }
+
+    private static string[] AddFrameworkArg(string[] forwardArgs, string? targetFramework)
+    {
+        if (string.IsNullOrWhiteSpace(targetFramework))
+        {
+            return forwardArgs;
+        }
+
+        return [.. forwardArgs, "--framework", targetFramework];
     }
 
     private static int GetMaxFilterLength(IReadOnlyList<string> forwardArgs)

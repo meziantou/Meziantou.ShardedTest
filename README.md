@@ -71,9 +71,9 @@ test:
 The tool runs a subset of tests from a test project based on the provided parameters. It performs the following steps:
 
 - Lists all available tests using `dotnet test --list-tests`
-- Sorts tests deterministically using ordinal string comparison
+- Sorts tests deterministically using `(target framework, test name)` with ordinal string comparison
 - Selects a shard based on `--shard-index` and `--total-shards`
-- Runs the selected tests using `dotnet test` with the appropriate filters
+- Runs the selected tests using `dotnet test` with filters, scoped to the selected target framework(s)
 - Forwards all parameters except `--shard-index` and `--total-shards` to `dotnet test`
 
 Note that command line length can be a limiting factor when running a large number of tests. The tool automatically splits test filters into multiple `dotnet test` invocations if necessary.

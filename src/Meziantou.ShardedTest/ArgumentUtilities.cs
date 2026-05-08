@@ -30,6 +30,29 @@ internal static class ArgumentUtilities
         return result.ToArray();
     }
 
+    public static string[] RemoveFrameworkArgs(string[] args)
+    {
+        var result = new List<string>(args.Length);
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+            if (IsOption(arg, "--framework", out var requiresValue) || IsOption(arg, "-f", out requiresValue))
+            {
+                if (requiresValue && i + 1 < args.Length)
+                {
+                    i++;
+                }
+
+                continue;
+            }
+
+            result.Add(arg);
+        }
+
+        return result.ToArray();
+    }
+
     public static string[] RemoveListTestsArgs(string[] args)
     {
         return args.Where(arg => !arg.Equals("--list-tests", StringComparison.OrdinalIgnoreCase)).ToArray();

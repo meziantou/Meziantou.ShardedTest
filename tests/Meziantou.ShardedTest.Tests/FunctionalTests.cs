@@ -36,7 +36,9 @@ public class FunctionalTests(ToolFixture toolFixture)
         Assert.Contains("TestResults", output, StringComparison.Ordinal);
 
         var executedTests = ReadExecutedTests(resultsRoot);
-        Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), executedTests.OrderBy(test => test, StringComparer.Ordinal));
+        Assert.Equal(
+            expectedTests.Select(test => test.Name).Order(StringComparer.Ordinal),
+            executedTests.Order(StringComparer.Ordinal));
     }
 
     [Fact]
@@ -99,7 +101,7 @@ public class FunctionalTests(ToolFixture toolFixture)
         Assert.Contains("Listing all tests...", CombineOutput(runResult), StringComparison.Ordinal);
 
         var listedTests = TestListParser.Parse(CombineOutput(runResult));
-        Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), listedTests.OrderBy(test => test, StringComparer.Ordinal));
+        Assert.Equal(OrderTests(expectedTests), OrderTests(listedTests));
     }
 
     [Fact]
@@ -131,7 +133,7 @@ public class FunctionalTests(ToolFixture toolFixture)
         Assert.True(listResult.ExitCode == 0, BuildProcessMessage(listResult));
 
         var listedTests = TestListParser.Parse(CombineOutput(listResult));
-        Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), listedTests.OrderBy(test => test, StringComparer.Ordinal));
+        Assert.Equal(OrderTests(expectedTests), OrderTests(listedTests));
 
         var runResult = await RunToolAsync(
             toolPath,
@@ -148,7 +150,9 @@ public class FunctionalTests(ToolFixture toolFixture)
         Assert.True(runResult.ExitCode == 0, BuildProcessMessage(runResult));
 
         var executedTests = ReadExecutedTests(resultsRoot);
-        Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), executedTests.OrderBy(test => test, StringComparer.Ordinal));
+        Assert.Equal(
+            expectedTests.Select(test => test.Name).Order(StringComparer.Ordinal),
+            executedTests.Order(StringComparer.Ordinal));
     }
 
     [Fact]
@@ -183,7 +187,7 @@ public class FunctionalTests(ToolFixture toolFixture)
         Assert.True(listResult.ExitCode == 0, BuildProcessMessage(listResult));
 
         var listedTests = TestListParser.Parse(CombineOutput(listResult));
-        Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), listedTests.OrderBy(test => test, StringComparer.Ordinal));
+        Assert.Equal(expectedTests.Order(StringComparer.Ordinal), listedTests.Select(test => test.Name).Order(StringComparer.Ordinal));
 
         var runResult = await RunToolAsync(
             toolPath,
@@ -201,7 +205,66 @@ public class FunctionalTests(ToolFixture toolFixture)
         Assert.True(runResult.ExitCode == 0, BuildProcessMessage(runResult));
 
         var executedTests = ReadExecutedTests(resultsRoot);
-        Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), executedTests.OrderBy(test => test, StringComparer.Ordinal));
+        Assert.Equal(expectedTests.Order(StringComparer.Ordinal), executedTests.Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task MultiTargetProject_ListsFrameworkAndRunsSelectedFrameworkOnly()
+    {
+        await using var temp = TemporaryDirectory.Create();
+        var toolPath = toolFixture.ToolPath;
+        var testProjectPath = CreateMultiTargetedTestProject(temp);
+        var resultsRoot = Path.GetDirectoryName(testProjectPath)!;
+        CleanupTrxResults(resultsRoot);
+
+        var listResult = await RunToolAsync(
+            toolPath,
+            [
+                "--shard-index", "1",
+                "--total-shards", "1",
+                "--verbose",
+                testProjectPath,
+                "--list-tests",
+            ],
+            Path.GetDirectoryName(testProjectPath)!,
+            environmentVariables: null);
+
+        Assert.True(listResult.ExitCode == 0, BuildProcessMessage(listResult));
+
+        var listedTests = TestListParser.Parse(CombineOutput(listResult));
+        Assert.NotEmpty(listedTests);
+        Assert.All(listedTests, test => Assert.False(string.IsNullOrWhiteSpace(test.TargetFramework)));
+
+        var frameworkSpecificTest = listedTests
+            .Where(test => test.Name.Contains("Sample.MultiTarget.FrameworkSpecificTests.", StringComparison.Ordinal))
+            .First();
+        var selectedFramework = frameworkSpecificTest.TargetFramework!;
+        var selectedFilter = "FullyQualifiedName=" + frameworkSpecificTest.Name;
+
+        var runResult = await RunToolAsync(
+            toolPath,
+            [
+                "--shard-index", "1",
+                "--total-shards", "1",
+                "--verbose",
+                testProjectPath,
+                "--logger", "trx",
+                "--filter", selectedFilter,
+            ],
+            Path.GetDirectoryName(testProjectPath)!,
+            environmentVariables: null);
+
+        Assert.True(runResult.ExitCode == 0, BuildProcessMessage(runResult));
+
+        var output = CombineOutput(runResult);
+        var runCommand = output
+            .Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries)
+            .Where(line => line.StartsWith("Executing: dotnet ", StringComparison.Ordinal))
+            .Where(line => line.Contains("--filter", StringComparison.Ordinal))
+            .Single(line => !line.Contains("--list-tests", StringComparison.Ordinal));
+
+        Assert.Contains($"--framework {selectedFramework}", runCommand, StringComparison.Ordinal);
+        Assert.Contains(frameworkSpecificTest.Name, runCommand, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -236,7 +299,7 @@ public class FunctionalTests(ToolFixture toolFixture)
         Assert.True(trxFiles.Length > 1, "Expected multiple trx files due to filter splitting.");
 
         var executedTests = ReadExecutedTests(resultsRoot);
-        Assert.Equal(allTests.Order(StringComparer.Ordinal), executedTests.Order(StringComparer.Ordinal));
+        Assert.Equal(allTests.Select(test => test.Name).Order(StringComparer.Ordinal), executedTests.Order(StringComparer.Ordinal));
     }
 
     [Fact]
@@ -295,7 +358,9 @@ public class FunctionalTests(ToolFixture toolFixture)
         Assert.True(runResult.ExitCode == 0, BuildProcessMessage(runResult));
 
         var executedTests = ReadExecutedTests(resultsRoot);
-        Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), executedTests.OrderBy(test => test, StringComparer.Ordinal));
+        Assert.Equal(
+            expectedTests.Select(test => test.Name).Order(StringComparer.Ordinal),
+            executedTests.Order(StringComparer.Ordinal));
     }
 
     [Theory]
@@ -370,12 +435,46 @@ public class FunctionalTests(ToolFixture toolFixture)
         return projectPath;
     }
 
+    private static string CreateMultiTargetedTestProject(TemporaryDirectory temp)
+    {
+        var projectDirectory = Path.Combine(temp.FullPath, "MultiTargetSampleTests");
+        Directory.CreateDirectory(projectDirectory);
+
+        var projectPath = Path.Combine(projectDirectory, "MultiTargetSampleTests.csproj");
+        File.WriteAllText(projectPath, BuildMultiTargetedProjectFile());
+
+        var testFilePath = Path.Combine(projectDirectory, "SampleTests.cs");
+        File.WriteAllText(testFilePath, BuildMultiTargetedTestFile());
+
+        return projectPath;
+    }
+
     private static string BuildTestProjectFile()
     {
         return """
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+</Project>
+""";
+    }
+
+    private static string BuildMultiTargetedProjectFile()
+    {
+        return """
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
@@ -420,6 +519,34 @@ public class FunctionalTests(ToolFixture toolFixture)
         return builder.ToString();
     }
 
+    private static string BuildMultiTargetedTestFile()
+    {
+        return """
+using Xunit;
+
+namespace Sample.MultiTarget;
+
+public class CommonTests
+{
+    [Fact]
+    public void Shared() => Assert.True(true);
+}
+
+public class FrameworkSpecificTests
+{
+#if NET8_0
+    [Fact]
+    public void OnlyNet8() => Assert.True(true);
+#endif
+
+#if NET10_0
+    [Fact]
+    public void OnlyNet10() => Assert.True(true);
+#endif
+}
+""";
+    }
+
     private static (string NamespaceName, string ClassName, string MethodName) ParseTestName(string fullyQualifiedName)
     {
         var segments = fullyQualifiedName.Split('.', StringSplitOptions.RemoveEmptyEntries);
@@ -434,7 +561,14 @@ public class FunctionalTests(ToolFixture toolFixture)
         return (namespaceName, className, methodName);
     }
 
-    private static async Task<IReadOnlyList<string>> ListTestsAsync(string projectPath)
+    private static IOrderedEnumerable<DiscoveredTest> OrderTests(IEnumerable<DiscoveredTest> tests)
+    {
+        return tests
+            .OrderBy(test => test.TargetFramework ?? string.Empty, StringComparer.Ordinal)
+            .ThenBy(test => test.Name, StringComparer.Ordinal);
+    }
+
+    private static async Task<IReadOnlyList<DiscoveredTest>> ListTestsAsync(string projectPath)
     {
         var result = await RunDotnetAsync(
             ["test", projectPath, "--list-tests"],
@@ -447,7 +581,7 @@ public class FunctionalTests(ToolFixture toolFixture)
         return TestListParser.Parse(output);
     }
 
-    private static async Task<IReadOnlyList<string>> ListTestsAsync(string projectPath, string filter)
+    private static async Task<IReadOnlyList<DiscoveredTest>> ListTestsAsync(string projectPath, string filter)
     {
         var result = await RunDotnetAsync(
             ["test", projectPath, "--list-tests", "--filter", filter],
