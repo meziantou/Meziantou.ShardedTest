@@ -11,11 +11,18 @@ internal static class ArgumentParser
 
         int? shardIndex = null;
         int? totalShards = null;
+        var verbose = false;
         var forwardArgs = new List<string>(args.Length);
 
         for (var i = 0; i < args.Length; i++)
         {
             var arg = args[i];
+            if (arg.Equals("--verbose", StringComparison.OrdinalIgnoreCase))
+            {
+                verbose = true;
+                continue;
+            }
+
             if (TryReadOption(args, ref i, "--shard-index", out var shardIndexValue, out error))
             {
                 if (error.Length > 0)
@@ -120,7 +127,7 @@ internal static class ArgumentParser
             return false;
         }
 
-        parsed = new ParsedArguments(shardIndex.Value, totalShards.Value, forwardArgs.ToArray());
+        parsed = new ParsedArguments(shardIndex.Value, totalShards.Value, verbose, forwardArgs.ToArray());
         return true;
     }
 

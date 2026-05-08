@@ -2,7 +2,7 @@
 
 internal static class Program
 {
-	private const string UsageText = "Usage: Meziantou.ShardedTest --shard-index <n> --total-shards <n> [dotnet test arguments]";
+	private const string UsageText = "Usage: Meziantou.ShardedTest --shard-index <n> --total-shards <n> [--verbose] [dotnet test arguments]";
 
 	public static async Task<int> Main(string[] args)
 	{
@@ -19,7 +19,7 @@ internal static class Program
 
 		try
 		{
-			tests = await DotnetTestService.ListTestsAsync(parsed.ForwardArgs, CancellationToken.None);
+			tests = await DotnetTestService.ListTestsAsync(parsed.ForwardArgs, CancellationToken.None, parsed.Verbose);
 		}
 		catch (Exception ex)
 		{
@@ -40,7 +40,7 @@ internal static class Program
 			return 0;
 		}
 
-		return await DotnetTestService.RunTestsAsync(parsed.ForwardArgs, tests, selectedTests, CancellationToken.None);
+		return await DotnetTestService.RunTestsAsync(parsed.ForwardArgs, tests, selectedTests, CancellationToken.None, parsed.Verbose);
 	}
 
 	private static void WriteListTests(IReadOnlyList<string> tests)

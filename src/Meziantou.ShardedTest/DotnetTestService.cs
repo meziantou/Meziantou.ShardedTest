@@ -5,10 +5,10 @@ namespace Meziantou.ShardedTest;
 internal static class DotnetTestService
 {
 
-    public static async Task<IReadOnlyList<string>> ListTestsAsync(string[] forwardArgs, CancellationToken cancellationToken)
+    public static async Task<IReadOnlyList<string>> ListTestsAsync(string[] forwardArgs, CancellationToken cancellationToken, bool verbose = false)
     {
         var arguments = BuildListTestsArguments(forwardArgs);
-        var result = await ProcessRunner.RunAsync("dotnet", arguments, cancellationToken);
+        var result = await ProcessRunner.RunAsync("dotnet", arguments, cancellationToken, verbose: verbose);
         if (result.ExitCode != 0)
         {
             var message = BuildErrorMessage("dotnet test --list-tests", result);
@@ -23,7 +23,8 @@ internal static class DotnetTestService
         string[] forwardArgs,
         IReadOnlyList<string> allTests,
         IReadOnlyList<string> selectedTests,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool verbose = false)
     {
         var sanitizedArgs = ArgumentUtilities.RemoveFilterArgs(forwardArgs);
         var maxFilterLength = GetMaxFilterLength(sanitizedArgs);
@@ -42,7 +43,7 @@ internal static class DotnetTestService
             }
 
             var arguments = BuildRunArguments(sanitizedArgs, filters[filterIndex]);
-            var result = await ProcessRunner.RunAsync("dotnet", arguments, cancellationToken, forwardOutput: true);
+            var result = await ProcessRunner.RunAsync("dotnet", arguments, cancellationToken, forwardOutput: true, verbose: verbose);
             if (result.ExitCode != 0)
             {
                 return result.ExitCode;

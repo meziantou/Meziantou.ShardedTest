@@ -5,7 +5,7 @@ namespace Meziantou.ShardedTest;
 
 internal static class ProcessRunner
 {
-    public static async Task<ProcessResult> RunAsync(string fileName, IReadOnlyList<string> arguments, CancellationToken cancellationToken, bool forwardOutput = false)
+    public static async Task<ProcessResult> RunAsync(string fileName, IReadOnlyList<string> arguments, CancellationToken cancellationToken, bool forwardOutput = false, bool verbose = false)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -18,6 +18,11 @@ internal static class ProcessRunner
         foreach (var argument in arguments)
         {
             startInfo.ArgumentList.Add(argument);
+        }
+
+        if (verbose && IsDotnetCommand(fileName))
+        {
+            Console.Error.WriteLine($"Executing: {BuildCommandLine(fileName, arguments)}");
         }
 
         using var process = new Process { StartInfo = startInfo };
@@ -51,5 +56,41 @@ internal static class ProcessRunner
                 await output.FlushAsync(cancellationToken);
             }
         }
+    }
+
+    private static bool IsDotnetCommand(string fileName)
+    {
+        var commandName = Path.GetFileNameWithoutExtension(fileName);
+        return commandName.Equals("dotnet", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildCommandLine(string fileName, IReadOnlyList<string> arguments)
+    {
+        var builder = new StringBuilder(EscapeArgument(fileName));
+        foreach (var argument in arguments)
+        {
+            builder.Append(' ');
+            builder.Append(EscapeArgument(argument));
+        }
+
+        return builder.ToString();
+    }
+
+    private static string EscapeArgument(string argument)
+    {
+        if (argument.Length == 0)
+        {
+            return "\"\"";
+        }
+
+        if (argument.IndexOfAny([' ', '\t', '\r', '\n', '"']) < 0)
+        {
+            return argument;
+        }
+
+        var escaped = argument
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\"", "\\\"", StringComparison.Ordinal);
+        return "\"" + escaped + "\"";
     }
 }

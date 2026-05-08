@@ -40,6 +40,39 @@ public class FunctionalTests(ToolFixture toolFixture)
     }
 
     [Fact]
+    public async Task VerboseOptionPrintsDotnetSubprocessCommands()
+    {
+        await using var temp = TemporaryDirectory.Create();
+        var toolPath = toolFixture.ToolPath;
+        var testProjectPath = CreateTestProject(temp, GetSampleTestNames());
+
+        var runResult = await RunToolAsync(
+            toolPath,
+            [
+                "--shard-index", "1",
+                "--total-shards", "1",
+                "--verbose",
+                testProjectPath,
+                "--logger", "trx",
+            ],
+            Path.GetDirectoryName(testProjectPath)!,
+            environmentVariables: null);
+
+        Assert.True(runResult.ExitCode == 0, BuildProcessMessage(runResult));
+
+        var output = CombineOutput(runResult);
+        var verboseLines = output
+            .Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries)
+            .Where(line => line.StartsWith("Executing: dotnet ", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.True(verboseLines.Length >= 2, "Expected at least two verbose dotnet command lines.");
+        Assert.All(verboseLines, line => Assert.Contains(testProjectPath, line, StringComparison.Ordinal));
+        Assert.Contains(verboseLines, line => line.Contains("--list-tests", StringComparison.Ordinal));
+        Assert.Contains(verboseLines, line => line.Contains("--filter", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task ListTestsOptionOutputsSelectedTestsWithoutExecuting()
     {
         await using var temp = TemporaryDirectory.Create();
