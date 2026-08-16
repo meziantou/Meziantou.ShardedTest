@@ -31,9 +31,9 @@ public class FunctionalTests(ToolFixture toolFixture)
 
         Assert.True(runResult.ExitCode == 0, BuildProcessMessage(runResult));
         var output = CombineOutput(runResult);
-        Assert.Contains("Listing all tests...", output, StringComparison.Ordinal);
-        Assert.Contains($"Found {allTests.Count} tests, running {expectedTests.Count} over {allTests.Count} (shard 1/2)", output, StringComparison.Ordinal);
-        Assert.Contains("TestResults", output, StringComparison.Ordinal);
+        Xunit.Assert.Contains("Listing all tests...", output, StringComparison.Ordinal);
+        Xunit.Assert.Contains($"Found {allTests.Count} tests, running {expectedTests.Count} over {allTests.Count} (shard 1/2)", output, StringComparison.Ordinal);
+        Xunit.Assert.Contains("TestResults", output, StringComparison.Ordinal);
 
         var executedTests = ReadExecutedTests(resultsRoot);
         Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), executedTests.OrderBy(test => test, StringComparer.Ordinal));
@@ -66,8 +66,8 @@ public class FunctionalTests(ToolFixture toolFixture)
             .Where(line => line.StartsWith("Executing: dotnet ", StringComparison.Ordinal))
             .ToArray();
 
-        Assert.True(verboseLines.Length >= 2, "Expected at least two verbose dotnet command lines.");
-        Assert.All(verboseLines, line => Assert.Contains(testProjectPath, line, StringComparison.Ordinal));
+        Assert.HasCountGreaterThanOrEqual(2, verboseLines, "Expected at least two verbose dotnet command lines.");
+        Assert.All(verboseLines, line => Xunit.Assert.Contains(testProjectPath, line, StringComparison.Ordinal));
         Assert.Contains(verboseLines, line => line.Contains("--list-tests", StringComparison.Ordinal));
         Assert.Contains(verboseLines, line => line.Contains("--filter", StringComparison.Ordinal));
     }
@@ -96,7 +96,7 @@ public class FunctionalTests(ToolFixture toolFixture)
             environmentVariables: null);
 
         Assert.True(runResult.ExitCode == 0, BuildProcessMessage(runResult));
-        Assert.Contains("Listing all tests...", CombineOutput(runResult), StringComparison.Ordinal);
+        Xunit.Assert.Contains("Listing all tests...", CombineOutput(runResult), StringComparison.Ordinal);
 
         var listedTests = TestListParser.Parse(CombineOutput(runResult));
         Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), listedTests.OrderBy(test => test, StringComparer.Ordinal));
@@ -230,10 +230,10 @@ public class FunctionalTests(ToolFixture toolFixture)
             });
 
         Assert.True(runResult.ExitCode == 0, BuildProcessMessage(runResult));
-        Assert.Contains("Running tests (batch 1/", CombineOutput(runResult), StringComparison.Ordinal);
+        Xunit.Assert.Contains("Running tests (batch 1/", CombineOutput(runResult), StringComparison.Ordinal);
 
         var trxFiles = Directory.GetFiles(resultsRoot, "*.trx", SearchOption.AllDirectories);
-        Assert.True(trxFiles.Length > 1, "Expected multiple trx files due to filter splitting.");
+        Assert.HasCountGreaterThan(1, trxFiles, "Expected multiple trx files due to filter splitting.");
 
         var executedTests = ReadExecutedTests(resultsRoot);
         Assert.Equal(allTests.Order(StringComparer.Ordinal), executedTests.Order(StringComparer.Ordinal));
@@ -261,7 +261,7 @@ public class FunctionalTests(ToolFixture toolFixture)
         Assert.True(runResult.ExitCode == 0, BuildProcessMessage(runResult));
 
         var output = CombineOutput(runResult);
-        Assert.Contains("No tests selected for this job.", output, StringComparison.Ordinal);
+        Xunit.Assert.Contains("No tests selected for this job.", output, StringComparison.Ordinal);
 
         var trxFiles = Directory.GetFiles(resultsRoot, "*.trx", SearchOption.AllDirectories);
         Assert.Empty(trxFiles);
@@ -310,7 +310,7 @@ public class FunctionalTests(ToolFixture toolFixture)
         Assert.True(runResult.ExitCode != 0, BuildProcessMessage(runResult));
 
         var output = CombineOutput(runResult);
-        Assert.Contains(expectedError, output, StringComparison.Ordinal);
+        Xunit.Assert.Contains(expectedError, output, StringComparison.Ordinal);
     }
 
     public static IEnumerable<object[]> GetInvalidArguments()

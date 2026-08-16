@@ -69,7 +69,7 @@ public class TestFilterBuilderTests
             .SelectMany(filter => filter.Split('|', StringSplitOptions.RemoveEmptyEntries))
             .ToArray();
 
-        Assert.All(parts, part => Assert.StartsWith("FullyQualifiedName=", part, StringComparison.Ordinal));
+        Assert.All(parts, part => Xunit.Assert.StartsWith("FullyQualifiedName=", part, StringComparison.Ordinal));
 
         var names = parts
             .Select(part => part["FullyQualifiedName=".Length..])
