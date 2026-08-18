@@ -11,8 +11,33 @@ public class TestFilterBuilderTests
 
         Assert.Single(filters);
         Assert.Equal(
-            "FullyQualifiedName=Alpha.ClassA.Test1|FullyQualifiedName=Beta.ClassB.Test1",
+            "DisplayName=Alpha.ClassA.Test1|DisplayName=Beta.ClassB.Test1",
             filters[0]);
+    }
+
+    [Fact]
+    public void BuildFilters_EscapesCharactersReservedByTheFilterSyntax()
+    {
+        var allTests = new[]
+        {
+            "Alpha.ClassA.Theory1(value: 1)",
+            "Alpha.ClassA.Theory1(value: 2)",
+        };
+
+        var filters = TestFilterBuilder.BuildFilters(allTests, [allTests[0]], maxFilterLength: 200);
+
+        Assert.Single(filters);
+        Assert.Equal(@"DisplayName=Alpha.ClassA.Theory1\(value: 1\)", filters[0]);
+    }
+
+    [Theory]
+    [InlineData("Alpha.ClassA.Test1", "Alpha.ClassA.Test1")]
+    [InlineData("Alpha.ClassA.Theory(value: 1)", @"Alpha.ClassA.Theory\(value: 1\)")]
+    [InlineData("a=b&c|d~e!f", @"a\=b\&c\|d\~e\!f")]
+    [InlineData(@"a\b", @"a\\b")]
+    public void EscapeFilterValue(string value, string expected)
+    {
+        Assert.Equal(expected, TestFilterBuilder.EscapeFilterValue(value));
     }
 
     [Fact]
@@ -34,7 +59,22 @@ public class TestFilterBuilderTests
         var filters = TestFilterBuilder.BuildFilters(allTests, selected, maxFilterLength: 200);
 
         Assert.Single(filters);
-        Assert.Equal("FullyQualifiedName~Contoso.App.Tests.ClassA.", filters[0]);
+        Assert.Equal("DisplayName~Contoso.App.Tests.ClassA.", filters[0]);
+    }
+
+    [Fact]
+    public void BuildFilters_DoesNotCompressToPrefix_WhenSomeTestCasesAreNotSelected()
+    {
+        var allTests = new[]
+        {
+            "Contoso.App.Tests.ClassA.Theory1(value: 1)",
+            "Contoso.App.Tests.ClassA.Theory1(value: 2)",
+        };
+
+        var filters = TestFilterBuilder.BuildFilters(allTests, [allTests[0]], maxFilterLength: 4000);
+
+        Assert.Single(filters);
+        Assert.Equal(@"DisplayName=Contoso.App.Tests.ClassA.Theory1\(value: 1\)", filters[0]);
     }
 
     [Fact]
@@ -69,10 +109,10 @@ public class TestFilterBuilderTests
             .SelectMany(filter => filter.Split('|', StringSplitOptions.RemoveEmptyEntries))
             .ToArray();
 
-        Assert.All(parts, part => Assert.StartsWith("FullyQualifiedName=", part));
+        Assert.All(parts, part => Assert.StartsWith("DisplayName=", part));
 
         var names = parts
-            .Select(part => part["FullyQualifiedName=".Length..])
+            .Select(part => part["DisplayName=".Length..])
             .Order(StringComparer.Ordinal)
             .ToArray();
 

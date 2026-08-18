@@ -5,7 +5,13 @@ namespace Meziantou.ShardedTest;
 
 internal static class ProcessRunner
 {
-    public static async Task<ProcessResult> RunAsync(string fileName, IReadOnlyList<string> arguments, CancellationToken cancellationToken, bool forwardOutput = false, bool verbose = false)
+    public static async Task<ProcessResult> RunAsync(
+        string fileName,
+        IReadOnlyList<string> arguments,
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string>? environmentVariables = null,
+        bool forwardOutput = false,
+        bool verbose = false)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -18,6 +24,14 @@ internal static class ProcessRunner
         foreach (var argument in arguments)
         {
             startInfo.ArgumentList.Add(argument);
+        }
+
+        if (environmentVariables is not null)
+        {
+            foreach (var (name, value) in environmentVariables)
+            {
+                startInfo.Environment[name] = value;
+            }
         }
 
         if (verbose && IsDotnetCommand(fileName))

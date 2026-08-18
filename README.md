@@ -73,7 +73,19 @@ The tool runs a subset of tests from a test project based on the provided parame
 - Lists all available tests using `dotnet test --list-tests`
 - Sorts tests deterministically using ordinal string comparison
 - Selects a shard based on `--shard-index` and `--total-shards`
-- Runs the selected tests using `dotnet test` with the appropriate filters
+- Runs the selected tests using `dotnet test --filter "DisplayName=..."`
 - Forwards all parameters except `--shard-index` and `--total-shards` to `dotnet test`
 
+`dotnet test --list-tests` reports the display name of the tests, so the filters use the `DisplayName` property. This allows sharding the individual test cases of a theory (`Namespace.ClassName.MethodName(value: 1)`), whose fully qualified name is the name of the test method.
+
 Note that command line length can be a limiting factor when running a large number of tests. The tool automatically splits test filters into multiple `dotnet test` invocations if necessary.
+
+## Supported test runners
+
+Both runners of `dotnet test` are supported: VSTest and [Microsoft.Testing.Platform](https://learn.microsoft.com/dotnet/core/testing/microsoft-testing-platform-intro) (opted in using the `test` section of `global.json`). The tool detects the runner from the output of `dotnet test --list-tests`.
+
+When using Microsoft.Testing.Platform:
+
+- The options that are only valid when the tests are run (`--report-*`, `--coverage*`, `--crashdump*`, `--hangdump*`, `--retry-failed-tests*`) are not forwarded to the discovery step. Microsoft.Testing.Platform rejects the command line when such an extension is enabled while listing the tests.
+- When the tests of several test modules are run (a solution for instance), `--ignore-exit-code 8` is added so a module that does not contain any test for the current shard does not fail the run.
+- When the filters are split into multiple batches, each batch must generate a report with a distinct file name, otherwise a batch overwrites the report of the previous one. For instance, `--report-trx --report-trx-filename "report_{pid}.trx"`.

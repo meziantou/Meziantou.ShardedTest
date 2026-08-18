@@ -1,12 +1,19 @@
+using System.Buffers;
 using System.Text;
 
 namespace Meziantou.ShardedTest;
 
 internal static class TestFilterBuilder
 {
-    private const string ExactOperator = "FullyQualifiedName=";
-    private const string PrefixOperator = "FullyQualifiedName~";
+    // dotnet test --list-tests reports the display name of the tests. The DisplayName property is the only
+    // one that is guaranteed to match those names, both with VSTest and with Microsoft.Testing.Platform.
+    // For instance, xUnit reports "Namespace.ClassName.MethodName(value: 1)" for a theory whereas its
+    // FullyQualifiedName is "Namespace.ClassName.MethodName".
+    private const string ExactOperator = "DisplayName=";
+    private const string PrefixOperator = "DisplayName~";
     private const char Separator = '|';
+
+    private static readonly SearchValues<char> ReservedCharacters = SearchValues.Create("\\()&|=!~");
 
     public static IReadOnlyList<string> BuildFilters(
         IReadOnlyList<string> allTests,
@@ -37,6 +44,30 @@ internal static class TestFilterBuilder
         return SplitFilters(parts, Math.Max(1, maxFilterLength));
     }
 
+    /// <summary>
+    /// Escapes the characters that are reserved by the VSTest filter syntax.
+    /// </summary>
+    public static string EscapeFilterValue(string value)
+    {
+        if (value.AsSpan().IndexOfAny(ReservedCharacters) < 0)
+        {
+            return value;
+        }
+
+        var builder = new StringBuilder(value.Length + 8);
+        foreach (var c in value)
+        {
+            if (ReservedCharacters.Contains(c))
+            {
+                builder.Append('\\');
+            }
+
+            builder.Append(c);
+        }
+
+        return builder.ToString();
+    }
+
     private static void CollectParts(
         TestNode node,
         string prefix,
@@ -53,13 +84,15 @@ internal static class TestFilterBuilder
         if (node.Children.Count > 0 && node.SelectedCount == node.TotalCount)
         {
             var prefixWithDot = prefix.Length == 0 ? string.Empty : prefix + ".";
-            if (prefixWithDot.Length > 0
-                && node.SelectedCount > 1
-                && IsPrefixShorter(node, prefixWithDot)
-                && IsPrefixSafe(prefixWithDot, allTests, selectedSet, safePrefixCache))
+            if (prefixWithDot.Length > 0 && node.SelectedCount > 1)
             {
-                parts.Add(PrefixOperator + prefixWithDot);
-                return;
+                var escapedPrefix = EscapeFilterValue(prefixWithDot);
+                if (IsPrefixShorter(node, escapedPrefix)
+                    && IsPrefixSafe(prefixWithDot, allTests, selectedSet, safePrefixCache))
+                {
+                    parts.Add(PrefixOperator + escapedPrefix);
+                    return;
+                }
             }
         }
 
@@ -67,7 +100,7 @@ internal static class TestFilterBuilder
         {
             if (node.FullName is not null && selectedSet.Contains(node.FullName))
             {
-                parts.Add(ExactOperator + node.FullName);
+                parts.Add(ExactOperator + node.EscapedFullName);
             }
 
             return;
@@ -80,7 +113,7 @@ internal static class TestFilterBuilder
         }
     }
 
-    private static bool IsPrefixShorter(TestNode node, string prefixWithDot)
+    private static bool IsPrefixShorter(TestNode node, string escapedPrefixWithDot)
     {
         if (node.SelectedCount == 0)
         {
@@ -88,7 +121,7 @@ internal static class TestFilterBuilder
         }
 
         var explicitCost = node.ExplicitLeafCost + (node.SelectedCount - 1);
-        var prefixCost = PrefixOperator.Length + prefixWithDot.Length;
+        var prefixCost = PrefixOperator.Length + escapedPrefixWithDot.Length;
         return prefixCost < explicitCost;
     }
 
@@ -172,7 +205,7 @@ internal static class TestFilterBuilder
             if (selectedSet.Contains(node.FullName))
             {
                 node.SelectedCount = 1;
-                node.ExplicitLeafCost = ExactOperator.Length + node.FullName.Length;
+                node.ExplicitLeafCost = ExactOperator.Length + node.EscapedFullName.Length;
             }
 
             return;
@@ -208,6 +241,8 @@ internal static class TestFilterBuilder
 
         public string? FullName { get; private set; }
 
+        public string EscapedFullName { get; private set; } = string.Empty;
+
         public int TotalCount { get; set; }
 
         public int SelectedCount { get; set; }
@@ -231,6 +266,7 @@ internal static class TestFilterBuilder
             }
 
             node.FullName = fullName;
+            node.EscapedFullName = EscapeFilterValue(fullName);
         }
     }
 }
