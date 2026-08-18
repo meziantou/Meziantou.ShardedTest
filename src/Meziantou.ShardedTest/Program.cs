@@ -13,13 +13,13 @@ internal static class Program
 			return 1;
 		}
 
-		IReadOnlyList<string> tests;
+		TestListResult discoveredTests;
 		var listTestsRequested = ArgumentUtilities.HasListTestsArg(parsed.ForwardArgs);
 		Console.WriteLine("Listing all tests...");
 
 		try
 		{
-			tests = await DotnetTestService.ListTestsAsync(parsed.ForwardArgs, CancellationToken.None, parsed.Verbose);
+			discoveredTests = await DotnetTestService.ListTestsAsync(parsed.ForwardArgs, CancellationToken.None, parsed.Verbose);
 		}
 		catch (Exception ex)
 		{
@@ -27,6 +27,7 @@ internal static class Program
 			return 1;
 		}
 
+		var tests = discoveredTests.Tests;
 		var selectedTests = TestSelector.SelectTests(tests, parsed.ShardIndex, parsed.TotalShards);
 		Console.WriteLine($"Found {tests.Count} tests, running {selectedTests.Count} over {tests.Count} (shard {parsed.ShardIndex}/{parsed.TotalShards})");
 		if (listTestsRequested)
@@ -40,7 +41,7 @@ internal static class Program
 			return 0;
 		}
 
-		return await DotnetTestService.RunTestsAsync(parsed.ForwardArgs, tests, selectedTests, CancellationToken.None, parsed.Verbose);
+		return await DotnetTestService.RunTestsAsync(parsed.ForwardArgs, discoveredTests, selectedTests, CancellationToken.None, parsed.Verbose);
 	}
 
 	private static void WriteListTests(IReadOnlyList<string> tests)

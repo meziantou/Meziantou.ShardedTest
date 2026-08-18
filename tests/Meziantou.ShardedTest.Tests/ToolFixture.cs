@@ -6,6 +6,10 @@ namespace Meziantou.ShardedTest.Tests;
 
 public sealed class ToolFixture : IAsyncLifetime
 {
+    // The version must not exist on NuGet.org, otherwise "dotnet tool install" can silently install the
+    // published tool instead of the one built from the sources
+    private const string ToolVersion = "999.0.0-functionaltests";
+
     private TemporaryDirectory? _temp;
 
     public string ToolPath { get; private set; } = string.Empty;
@@ -33,7 +37,7 @@ public sealed class ToolFixture : IAsyncLifetime
         Directory.CreateDirectory(packageOutput);
 
         var packResult = await RunDotnetAsync(
-            ["pack", appProjectPath, "--output", packageOutput, "--nologo"],
+            ["pack", appProjectPath, "--output", packageOutput, "--nologo", "-p:Version=" + ToolVersion],
             repoRoot,
             environmentVariables: null);
         Assert.True(packResult.ExitCode == 0, BuildProcessMessage(packResult));
@@ -52,6 +56,7 @@ public sealed class ToolFixture : IAsyncLifetime
                 "--tool-path", toolInstallPath,
                 "--add-source", packageOutput,
                 "--ignore-failed-sources",
+                "--version", ToolVersion,
                 packageId
             ],
             repoRoot,
@@ -68,7 +73,7 @@ public sealed class ToolFixture : IAsyncLifetime
         return Path.Combine(GetRepoRoot(), "src", "Meziantou.ShardedTest", "Meziantou.ShardedTest.csproj");
     }
 
-    private static FullPath GetRepoRoot()
+    internal static FullPath GetRepoRoot()
     {
         var directory = FullPath.FromPath(AppContext.BaseDirectory);
         if (directory.TryFindFirstAncestorOrSelf(dir => File.Exists(dir / "Meziantou.ShardedTest.slnx"), out var repoRoot))

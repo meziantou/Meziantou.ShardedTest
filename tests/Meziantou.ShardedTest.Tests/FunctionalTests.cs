@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using System.Xml.Linq;
 using Meziantou.Framework;
 
@@ -6,12 +7,15 @@ namespace Meziantou.ShardedTest.Tests;
 
 public class FunctionalTests(ToolFixture toolFixture)
 {
-    [Fact]
-    public async Task RunsExpectedShardAndEmitsTrx()
+    public static TheoryData<TestRunner> Runners => new(Enum.GetValues<TestRunner>());
+
+    [Theory]
+    [MemberData(nameof(Runners))]
+    public async Task RunsExpectedShardAndEmitsTrx(TestRunner runner)
     {
         await using var temp = TemporaryDirectory.Create();
         var toolPath = toolFixture.ToolPath;
-        var testProjectPath = CreateTestProject(temp, GetSampleTestNames());
+        var testProjectPath = CreateTestProject(temp, GetSampleTestNames(), runner);
         var resultsRoot = Path.GetDirectoryName(testProjectPath)!;
         CleanupTrxResults(resultsRoot);
 
@@ -24,7 +28,7 @@ public class FunctionalTests(ToolFixture toolFixture)
                 "--shard-index", "1",
                 "--total-shards", "2",
                 testProjectPath,
-                "--logger", "trx",
+                .. GetReportArgs(runner),
             ],
             Path.GetDirectoryName(testProjectPath)!,
             environmentVariables: null);
@@ -33,18 +37,84 @@ public class FunctionalTests(ToolFixture toolFixture)
         var output = CombineOutput(runResult);
         Assert.Contains("Listing all tests...", output);
         Assert.Contains($"Found {allTests.Count} tests, running {expectedTests.Count} over {allTests.Count} (shard 1/2)", output);
-        Assert.Contains("TestResults", output);
+        Assert.Contains("SampleTests.dll", output);
+
+        var executedTests = ReadExecutedTests(resultsRoot);
+        Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), executedTests.OrderBy(test => test, StringComparer.Ordinal));
+    }
+
+    [Theory]
+    [MemberData(nameof(Runners))]
+    public async Task ShardsIndividualTheoryTestCases(TestRunner runner)
+    {
+        await using var temp = TemporaryDirectory.Create();
+        var toolPath = toolFixture.ToolPath;
+        var testProjectPath = CreateTestProject(temp, GetSampleTestNames(), runner, includeTheory: true);
+        var resultsRoot = Path.GetDirectoryName(testProjectPath)!;
+        CleanupTrxResults(resultsRoot);
+
+        var allTests = await ListTestsAsync(testProjectPath);
+        Assert.Contains(allTests, test => test.Contains('(', StringComparison.Ordinal));
+
+        var expectedTests = TestSelector.SelectTests(allTests, shardIndex: 2, totalShards: 3);
+        Assert.Contains(expectedTests, test => test.Contains('(', StringComparison.Ordinal));
+
+        var runResult = await RunToolAsync(
+            toolPath,
+            [
+                "--shard-index", "2",
+                "--total-shards", "3",
+                testProjectPath,
+                .. GetReportArgs(runner),
+            ],
+            Path.GetDirectoryName(testProjectPath)!,
+            environmentVariables: null);
+
+        Assert.True(runResult.ExitCode == 0, BuildProcessMessage(runResult));
 
         var executedTests = ReadExecutedTests(resultsRoot);
         Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), executedTests.OrderBy(test => test, StringComparer.Ordinal));
     }
 
     [Fact]
-    public async Task VerboseOptionPrintsDotnetSubprocessCommands()
+    public async Task ShardsSolutionWithSeveralTestProjects()
     {
         await using var temp = TemporaryDirectory.Create();
         var toolPath = toolFixture.ToolPath;
-        var testProjectPath = CreateTestProject(temp, GetSampleTestNames());
+
+        // Microsoft.Testing.Platform reports an error when a test module of the solution does not run any test
+        var solutionPath = CreateTestSolution(temp, TestRunner.MicrosoftTestingPlatform);
+        var solutionDirectory = Path.GetDirectoryName(solutionPath)!;
+        CleanupTrxResults(solutionDirectory);
+
+        var allTests = await ListTestsAsync(["test", "--solution", solutionPath, "--list-tests"], solutionDirectory);
+        var expectedTests = TestSelector.SelectTests(allTests, shardIndex: 1, totalShards: 4);
+        Assert.Single(expectedTests, "The shard must only contain tests from one of the test projects.");
+
+        var runResult = await RunToolAsync(
+            toolPath,
+            [
+                "--shard-index", "1",
+                "--total-shards", "4",
+                "--solution", solutionPath,
+                .. GetReportArgs(TestRunner.MicrosoftTestingPlatform),
+            ],
+            solutionDirectory,
+            environmentVariables: null);
+
+        Assert.True(runResult.ExitCode == 0, BuildProcessMessage(runResult));
+
+        var executedTests = ReadExecutedTests(solutionDirectory);
+        Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), executedTests.OrderBy(test => test, StringComparer.Ordinal));
+    }
+
+    [Theory]
+    [MemberData(nameof(Runners))]
+    public async Task VerboseOptionPrintsDotnetSubprocessCommands(TestRunner runner)
+    {
+        await using var temp = TemporaryDirectory.Create();
+        var toolPath = toolFixture.ToolPath;
+        var testProjectPath = CreateTestProject(temp, GetSampleTestNames(), runner);
 
         var runResult = await RunToolAsync(
             toolPath,
@@ -53,7 +123,7 @@ public class FunctionalTests(ToolFixture toolFixture)
                 "--total-shards", "1",
                 "--verbose",
                 testProjectPath,
-                "--logger", "trx",
+                .. GetReportArgs(runner),
             ],
             Path.GetDirectoryName(testProjectPath)!,
             environmentVariables: null);
@@ -72,12 +142,13 @@ public class FunctionalTests(ToolFixture toolFixture)
         Assert.Contains(verboseLines, line => line.Contains("--filter", StringComparison.Ordinal));
     }
 
-    [Fact]
-    public async Task ListTestsOptionOutputsSelectedTestsWithoutExecuting()
+    [Theory]
+    [MemberData(nameof(Runners))]
+    public async Task ListTestsOptionOutputsSelectedTestsWithoutExecuting(TestRunner runner)
     {
         await using var temp = TemporaryDirectory.Create();
         var toolPath = toolFixture.ToolPath;
-        var testProjectPath = CreateTestProject(temp, GetSampleTestNames(), shouldFail: true);
+        var testProjectPath = CreateTestProject(temp, GetSampleTestNames(), runner, shouldFail: true);
         var resultsRoot = Path.GetDirectoryName(testProjectPath)!;
         CleanupTrxResults(resultsRoot);
 
@@ -98,16 +169,17 @@ public class FunctionalTests(ToolFixture toolFixture)
         Assert.True(runResult.ExitCode == 0, BuildProcessMessage(runResult));
         Assert.Contains("Listing all tests...", CombineOutput(runResult));
 
-        var listedTests = TestListParser.Parse(CombineOutput(runResult));
+        var listedTests = TestListParser.Parse(CombineOutput(runResult)).Tests;
         Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), listedTests.OrderBy(test => test, StringComparer.Ordinal));
     }
 
-    [Fact]
-    public async Task ListTestsAndRunsHonorUserFilter()
+    [Theory]
+    [MemberData(nameof(Runners))]
+    public async Task ListTestsAndRunsHonorUserFilter(TestRunner runner)
     {
         await using var temp = TemporaryDirectory.Create();
         var toolPath = toolFixture.ToolPath;
-        var testProjectPath = CreateTestProject(temp, GetSampleTestNames());
+        var testProjectPath = CreateTestProject(temp, GetSampleTestNames(), runner);
         var resultsRoot = Path.GetDirectoryName(testProjectPath)!;
         CleanupTrxResults(resultsRoot);
 
@@ -130,7 +202,7 @@ public class FunctionalTests(ToolFixture toolFixture)
 
         Assert.True(listResult.ExitCode == 0, BuildProcessMessage(listResult));
 
-        var listedTests = TestListParser.Parse(CombineOutput(listResult));
+        var listedTests = TestListParser.Parse(CombineOutput(listResult)).Tests;
         Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), listedTests.OrderBy(test => test, StringComparer.Ordinal));
 
         var runResult = await RunToolAsync(
@@ -139,7 +211,7 @@ public class FunctionalTests(ToolFixture toolFixture)
                 "--shard-index", "1",
                 "--total-shards", "2",
                 testProjectPath,
-                "--logger", "trx",
+                .. GetReportArgs(runner),
                 "--filter", Filter,
             ],
             Path.GetDirectoryName(testProjectPath)!,
@@ -151,12 +223,13 @@ public class FunctionalTests(ToolFixture toolFixture)
         Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), executedTests.OrderBy(test => test, StringComparer.Ordinal));
     }
 
-    [Fact]
-    public async Task ListTestsAndRunsSupportConfigurationAndNoBuild()
+    [Theory]
+    [MemberData(nameof(Runners))]
+    public async Task ListTestsAndRunsSupportConfigurationAndNoBuild(TestRunner runner)
     {
         await using var temp = TemporaryDirectory.Create();
         var toolPath = toolFixture.ToolPath;
-        var testProjectPath = CreateTestProject(temp, GetSampleTestNames());
+        var testProjectPath = CreateTestProject(temp, GetSampleTestNames(), runner);
         var resultsRoot = Path.GetDirectoryName(testProjectPath)!;
         CleanupTrxResults(resultsRoot);
 
@@ -182,7 +255,7 @@ public class FunctionalTests(ToolFixture toolFixture)
 
         Assert.True(listResult.ExitCode == 0, BuildProcessMessage(listResult));
 
-        var listedTests = TestListParser.Parse(CombineOutput(listResult));
+        var listedTests = TestListParser.Parse(CombineOutput(listResult)).Tests;
         Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), listedTests.OrderBy(test => test, StringComparer.Ordinal));
 
         var runResult = await RunToolAsync(
@@ -191,7 +264,7 @@ public class FunctionalTests(ToolFixture toolFixture)
                 "--shard-index", "1",
                 "--total-shards", "1",
                 testProjectPath,
-                "--logger", "trx",
+                .. GetReportArgs(runner),
                 "--configuration", Configuration,
                 "--no-build",
             ],
@@ -204,12 +277,13 @@ public class FunctionalTests(ToolFixture toolFixture)
         Assert.Equal(expectedTests.OrderBy(test => test, StringComparer.Ordinal), executedTests.OrderBy(test => test, StringComparer.Ordinal));
     }
 
-    [Fact]
-    public async Task SplitsFiltersWhenMaxLengthIsSmall()
+    [Theory]
+    [MemberData(nameof(Runners))]
+    public async Task SplitsFiltersWhenMaxLengthIsSmall(TestRunner runner)
     {
         await using var temp = TemporaryDirectory.Create();
         var toolPath = toolFixture.ToolPath;
-        var testProjectPath = CreateTestProject(temp, GetSampleTestNames());
+        var testProjectPath = CreateTestProject(temp, GetSampleTestNames(), runner);
         var resultsRoot = Path.GetDirectoryName(testProjectPath)!;
         CleanupTrxResults(resultsRoot);
 
@@ -221,12 +295,13 @@ public class FunctionalTests(ToolFixture toolFixture)
                 "--shard-index", "1",
                 "--total-shards", "1",
                 testProjectPath,
-                "--logger", "trx"
+                // Each batch must use a distinct report file name, otherwise a batch overwrites the previous report
+                .. GetReportArgs(runner, reportFileName: "report_{pid}.trx"),
             ],
             Path.GetDirectoryName(testProjectPath)!,
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["TEST_PARALLELIZATION_MAX_FILTER_LENGTH"] = "60",
+                ["TEST_PARALLELIZATION_MAX_FILTER_LENGTH"] = "30",
             });
 
         Assert.True(runResult.ExitCode == 0, BuildProcessMessage(runResult));
@@ -239,12 +314,13 @@ public class FunctionalTests(ToolFixture toolFixture)
         Assert.Equal(allTests.Order(StringComparer.Ordinal), executedTests.Order(StringComparer.Ordinal));
     }
 
-    [Fact]
-    public async Task NoTestsSelected_ReturnsSuccessWithoutExecuting()
+    [Theory]
+    [MemberData(nameof(Runners))]
+    public async Task NoTestsSelected_ReturnsSuccessWithoutExecuting(TestRunner runner)
     {
         await using var temp = TemporaryDirectory.Create();
         var toolPath = toolFixture.ToolPath;
-        var testProjectPath = CreateTestProject(temp, GetSampleTestNames());
+        var testProjectPath = CreateTestProject(temp, GetSampleTestNames(), runner);
         var resultsRoot = Path.GetDirectoryName(testProjectPath)!;
         CleanupTrxResults(resultsRoot);
 
@@ -267,12 +343,13 @@ public class FunctionalTests(ToolFixture toolFixture)
         Assert.Empty(trxFiles);
     }
 
-    [Fact]
-    public async Task UsesGitLabEnvironmentVariablesAsFallback()
+    [Theory]
+    [MemberData(nameof(Runners))]
+    public async Task UsesGitLabEnvironmentVariablesAsFallback(TestRunner runner)
     {
         await using var temp = TemporaryDirectory.Create();
         var toolPath = toolFixture.ToolPath;
-        var testProjectPath = CreateTestProject(temp, GetSampleTestNames());
+        var testProjectPath = CreateTestProject(temp, GetSampleTestNames(), runner);
         var resultsRoot = Path.GetDirectoryName(testProjectPath)!;
         CleanupTrxResults(resultsRoot);
 
@@ -283,7 +360,7 @@ public class FunctionalTests(ToolFixture toolFixture)
             toolPath,
             [
                 testProjectPath,
-                "--logger", "trx",
+                .. GetReportArgs(runner),
             ],
             Path.GetDirectoryName(testProjectPath)!,
             new Dictionary<string, string>(StringComparer.Ordinal)
@@ -356,23 +433,106 @@ public class FunctionalTests(ToolFixture toolFixture)
             "ShardC.GammaTests.Test2",
         ];
 
-    private static string CreateTestProject(TemporaryDirectory temp, IReadOnlyList<string> testNames, bool shouldFail = false)
+    private static string[] GetReportArgs(TestRunner runner, string? reportFileName = null)
+    {
+        if (runner is TestRunner.MicrosoftTestingPlatform)
+        {
+            return reportFileName is null
+                ? ["--report-trx"]
+                : ["--report-trx", "--report-trx-filename", reportFileName];
+        }
+
+        return ["--logger", "trx"];
+    }
+
+    private static string CreateTestProject(
+        TemporaryDirectory temp,
+        IReadOnlyList<string> testNames,
+        TestRunner runner,
+        bool shouldFail = false,
+        bool includeTheory = false)
     {
         var projectDirectory = Path.Combine(temp.FullPath, "SampleTests");
         Directory.CreateDirectory(projectDirectory);
 
         var projectPath = Path.Combine(projectDirectory, "SampleTests.csproj");
-        File.WriteAllText(projectPath, BuildTestProjectFile());
+        File.WriteAllText(projectPath, BuildTestProjectFile(runner));
+
+        // The runner used by "dotnet test" is configured in global.json
+        File.WriteAllText(Path.Combine(projectDirectory, "global.json"), GetGlobalJson(runner));
 
         var testFilePath = Path.Combine(projectDirectory, "SampleTests.cs");
-        File.WriteAllText(testFilePath, BuildTestFile(testNames, shouldFail));
+        File.WriteAllText(testFilePath, BuildTestFile(testNames, shouldFail, includeTheory));
 
         return projectPath;
     }
 
-    private static string BuildTestProjectFile()
+    private static string CreateTestSolution(TemporaryDirectory temp, TestRunner runner)
     {
-        return """
+        var solutionDirectory = Path.Combine(temp.FullPath, "SampleSolution");
+        Directory.CreateDirectory(solutionDirectory);
+
+        File.WriteAllText(Path.Combine(solutionDirectory, "global.json"), GetGlobalJson(runner));
+
+        var projectNames = new[] { "First", "Second" };
+        foreach (var projectName in projectNames)
+        {
+            var projectDirectory = Path.Combine(solutionDirectory, projectName);
+            Directory.CreateDirectory(projectDirectory);
+            File.WriteAllText(Path.Combine(projectDirectory, projectName + ".csproj"), BuildTestProjectFile(runner));
+            File.WriteAllText(
+                Path.Combine(projectDirectory, "Tests.cs"),
+                BuildTestFile([$"{projectName}.{projectName}Tests.Test1", $"{projectName}.{projectName}Tests.Test2"], shouldFail: false, includeTheory: false));
+        }
+
+        var solutionPath = Path.Combine(solutionDirectory, "SampleSolution.slnx");
+        var projects = string.Join(Environment.NewLine, projectNames.Select(name => $"""  <Project Path="{name}/{name}.csproj" />"""));
+        File.WriteAllText(solutionPath, $"""
+<Solution>
+{projects}
+</Solution>
+""");
+
+        return solutionPath;
+    }
+
+    private static string GetGlobalJson(TestRunner runner)
+    {
+        var runnerName = runner switch
+        {
+            TestRunner.MicrosoftTestingPlatform => "Microsoft.Testing.Platform",
+            _ => "VSTest",
+        };
+
+        // The sample projects must use the same SDK as the repository, otherwise a newer SDK installed on the
+        // machine would be used and the behavior of "dotnet test" could be different
+        using var document = JsonDocument.Parse(File.ReadAllText(ToolFixture.GetRepoRoot() / "global.json"));
+        var sdk = document.RootElement.GetProperty("sdk").GetRawText();
+
+        return $$"""{ "sdk": {{sdk}}, "test": { "runner": "{{runnerName}}" } }""";
+    }
+
+    private static string BuildTestProjectFile(TestRunner runner)
+    {
+        return runner switch
+        {
+            TestRunner.MicrosoftTestingPlatform => """
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3.mtp-v2" Version="4.0.0" />
+    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport" Version="2.3.3" />
+  </ItemGroup>
+</Project>
+""",
+            _ => """
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -387,10 +547,11 @@ public class FunctionalTests(ToolFixture toolFixture)
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
 </Project>
-""";
+""",
+        };
     }
 
-    private static string BuildTestFile(IReadOnlyList<string> testNames, bool shouldFail)
+    private static string BuildTestFile(IReadOnlyList<string> testNames, bool shouldFail, bool includeTheory)
     {
         var builder = new StringBuilder();
         builder.AppendLine("using Xunit;");
@@ -417,6 +578,25 @@ public class FunctionalTests(ToolFixture toolFixture)
             builder.AppendLine("}");
         }
 
+        if (includeTheory)
+        {
+            // The display name of a theory test case contains characters that must be escaped in a test filter
+            builder.AppendLine();
+            builder.AppendLine("""
+namespace ShardD
+{
+    public class DeltaTests
+    {
+        [Theory]
+        [InlineData(1)]
+        [InlineData(2)]
+        [InlineData(3)]
+        public void Theory1(int value) => Assert.True(value > 0);
+    }
+}
+""");
+        }
+
         return builder.ToString();
     }
 
@@ -434,30 +614,24 @@ public class FunctionalTests(ToolFixture toolFixture)
         return (namespaceName, className, methodName);
     }
 
-    private static async Task<IReadOnlyList<string>> ListTestsAsync(string projectPath)
+    private static Task<IReadOnlyList<string>> ListTestsAsync(string projectPath)
     {
-        var result = await RunDotnetAsync(
-            ["test", projectPath, "--list-tests"],
-            Path.GetDirectoryName(projectPath)!,
-            environmentVariables: null);
-
-        Assert.True(result.ExitCode == 0, BuildProcessMessage(result));
-
-        var output = CombineOutput(result);
-        return TestListParser.Parse(output);
+        return ListTestsAsync(["test", projectPath, "--list-tests"], Path.GetDirectoryName(projectPath)!);
     }
 
-    private static async Task<IReadOnlyList<string>> ListTestsAsync(string projectPath, string filter)
+    private static Task<IReadOnlyList<string>> ListTestsAsync(string projectPath, string filter)
     {
-        var result = await RunDotnetAsync(
-            ["test", projectPath, "--list-tests", "--filter", filter],
-            Path.GetDirectoryName(projectPath)!,
-            environmentVariables: null);
+        return ListTestsAsync(["test", projectPath, "--list-tests", "--filter", filter], Path.GetDirectoryName(projectPath)!);
+    }
+
+    private static async Task<IReadOnlyList<string>> ListTestsAsync(IReadOnlyList<string> args, string workingDirectory)
+    {
+        var result = await RunDotnetAsync(args, workingDirectory, environmentVariables: null);
 
         Assert.True(result.ExitCode == 0, BuildProcessMessage(result));
 
         var output = CombineOutput(result);
-        return TestListParser.Parse(output);
+        return TestListParser.Parse(output).Tests;
     }
 
     private static async Task BuildProjectAsync(string projectPath, string configuration)
@@ -497,39 +671,12 @@ public class FunctionalTests(ToolFixture toolFixture)
     private static IEnumerable<string> ReadTestsFromTrx(string filePath)
     {
         var document = XDocument.Load(filePath);
-        var testMap = document
+        return document
             .Descendants()
-            .Where(element => element.Name.LocalName == "UnitTest")
-            .Select(unitTest => new
-            {
-                Id = unitTest.Attribute("id")?.Value,
-                Name = GetFullTestName(unitTest)
-            })
-            .Where(entry => entry.Id is not null && entry.Name is not null)
-            .ToDictionary(entry => entry.Id!, entry => entry.Name!, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var result in document.Descendants().Where(element => element.Name.LocalName == "UnitTestResult"))
-        {
-            var id = result.Attribute("testId")?.Value;
-            if (id is not null && testMap.TryGetValue(id, out var name))
-            {
-                yield return name;
-            }
-        }
-    }
-
-    private static string? GetFullTestName(XElement unitTest)
-    {
-        var testMethod = unitTest.Descendants().FirstOrDefault(element => element.Name.LocalName == "TestMethod");
-        var className = testMethod?.Attribute("className")?.Value;
-        var methodName = testMethod?.Attribute("name")?.Value;
-
-        if (string.IsNullOrWhiteSpace(className) || string.IsNullOrWhiteSpace(methodName))
-        {
-            return null;
-        }
-
-        return className + "." + methodName;
+            .Where(element => element.Name.LocalName == "UnitTestResult")
+            .Select(element => element.Attribute("testName")?.Value)
+            .Where(name => !string.IsNullOrEmpty(name))
+            .Select(name => name!);
     }
 
     private static async Task<ProcessResult> RunDotnetAsync(
@@ -562,6 +709,10 @@ public class FunctionalTests(ToolFixture toolFixture)
             RedirectStandardError = true,
             UseShellExecute = false,
         };
+
+        // MSBuild uses this environment variable as a global property. The CI sets it, and "dotnet test --solution"
+        // then builds the test projects in another directory than the one it uses to run them.
+        startInfo.Environment.Remove("Configuration");
 
         foreach (var arg in args)
         {
