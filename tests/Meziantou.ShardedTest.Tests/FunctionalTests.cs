@@ -710,6 +710,10 @@ namespace ShardD
             UseShellExecute = false,
         };
 
+        // MSBuild uses this environment variable as a global property. The CI sets it, and "dotnet test --solution"
+        // then builds the test projects in another directory than the one it uses to run them.
+        startInfo.Environment.Remove("Configuration");
+
         foreach (var arg in args)
         {
             startInfo.ArgumentList.Add(arg);
