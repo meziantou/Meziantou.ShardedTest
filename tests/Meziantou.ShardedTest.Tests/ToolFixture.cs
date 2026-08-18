@@ -68,7 +68,7 @@ public sealed class ToolFixture : IAsyncLifetime
         return Path.Combine(GetRepoRoot(), "src", "Meziantou.ShardedTest", "Meziantou.ShardedTest.csproj");
     }
 
-    private static FullPath GetRepoRoot()
+    internal static FullPath GetRepoRoot()
     {
         var directory = FullPath.FromPath(AppContext.BaseDirectory);
         if (directory.TryFindFirstAncestorOrSelf(dir => File.Exists(dir / "Meziantou.ShardedTest.slnx"), out var repoRoot))

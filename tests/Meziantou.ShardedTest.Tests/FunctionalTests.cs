@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using System.Xml.Linq;
 using Meziantou.Framework;
 
@@ -497,11 +498,18 @@ public class FunctionalTests(ToolFixture toolFixture)
 
     private static string GetGlobalJson(TestRunner runner)
     {
-        return runner switch
+        var runnerName = runner switch
         {
-            TestRunner.MicrosoftTestingPlatform => """{ "test": { "runner": "Microsoft.Testing.Platform" } }""",
-            _ => """{ "test": { "runner": "VSTest" } }""",
+            TestRunner.MicrosoftTestingPlatform => "Microsoft.Testing.Platform",
+            _ => "VSTest",
         };
+
+        // The sample projects must use the same SDK as the repository, otherwise a newer SDK installed on the
+        // machine would be used and the behavior of "dotnet test" could be different
+        using var document = JsonDocument.Parse(File.ReadAllText(ToolFixture.GetRepoRoot() / "global.json"));
+        var sdk = document.RootElement.GetProperty("sdk").GetRawText();
+
+        return $$"""{ "sdk": {{sdk}}, "test": { "runner": "{{runnerName}}" } }""";
     }
 
     private static string BuildTestProjectFile(TestRunner runner)
